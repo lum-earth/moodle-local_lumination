@@ -4,6 +4,8 @@
 
 - Works with the new Lumination AI Provider (Moodle 5.0+). When the provider is installed and enabled, the Course Generator uses its API key and base URL, and the settings page says so. Without it, nothing changes.
 - The usage dashboard shows actions logged by other Lumination plugins with their own labels.
+- A clear message when the API takes too long to answer, instead of a connection error.
+- The upload form accepts PDF, DOCX and TXT, the formats the API reads. Old .doc files are no longer offered.
 - README rewritten with current pricing ($0.02 per lesson, $20 of free credits for new accounts) and how to get a key.
 
 ## v0.4.0 (2026-10-22)

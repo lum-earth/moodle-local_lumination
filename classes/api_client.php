@@ -50,6 +50,9 @@ class api_client {
     /** @var int[] Seconds to wait before each retry of a transient failure. */
     private const RETRY_DELAYS = [2, 5];
 
+    /** @var int curl's "operation timed out" error number. */
+    private const CURLE_OPERATION_TIMEDOUT = 28;
+
     /** @var int Upper bound for a server-provided Retry-After, in seconds. */
     private const RETRY_AFTER_MAX = 30;
 
@@ -411,7 +414,14 @@ class api_client {
      */
     private function handle_response(array $res): array {
         if ($res['errno']) {
-            throw new api_exception(0, $res['error'], $this->host(), $res['requestid'], true);
+            throw new api_exception(
+                0,
+                $res['error'],
+                $this->host(),
+                $res['requestid'],
+                true,
+                $res['errno'] === self::CURLE_OPERATION_TIMEDOUT
+            );
         }
         if ($res['code'] < 200 || $res['code'] >= 300) {
             throw new api_exception($res['code'], $this->error_detail($res), $this->host(), $res['requestid']);

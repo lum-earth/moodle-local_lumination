@@ -6,7 +6,7 @@ Generate a complete Moodle course from a PDF or Word document with AI. Part of t
 
 **AI Course Generator.** Upload a PDF, Word or text file and get a structured Moodle course with sections and lesson pages.
 
-1. **Upload** a source document (PDF, DOC, DOCX or TXT).
+1. **Upload** a source document (PDF, DOCX or TXT).
 2. **Review** the AI-generated outline and edit it (add or remove modules and lessons).
 3. **Create** the course. Lessons are written in the background through Moodle's cron, and a progress page shows how far it has got.
 

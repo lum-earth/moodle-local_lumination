@@ -50,13 +50,15 @@ class api_exception extends \moodle_exception {
      * @param string $host Host the request was sent to.
      * @param string $requestid The X-REQUEST-ID header sent with the call.
      * @param bool $connectionerror True if the API could not be reached at all.
+     * @param bool $timedout True if the API was reached but did not answer in time.
      */
     public function __construct(
         int $httpcode,
         string $detail,
         string $host,
         string $requestid,
-        bool $connectionerror = false
+        bool $connectionerror = false,
+        bool $timedout = false
     ) {
         $this->httpcode = $httpcode;
         $this->requestid = $requestid;
@@ -67,7 +69,9 @@ class api_exception extends \moodle_exception {
             'host' => $host,
             'requestid' => $requestid,
         ];
-        if ($connectionerror) {
+        if ($timedout) {
+            $errorcode = 'errorapitimeout';
+        } else if ($connectionerror) {
             $errorcode = 'errorapiconnect';
         } else if ($httpcode === 401 || $httpcode === 403) {
             $errorcode = 'errorapikey';

@@ -159,5 +159,10 @@ final class api_client_test extends \advanced_testcase {
         $e = new api_exception(0, 'Could not resolve host', 'ai-tutor.ai', 'moodle-abc', true);
         $this->assertSame('errorapiconnect', $e->errorcode);
         $this->assertFalse($e->is_fatal());
+
+        $e = new api_exception(0, 'Operation timed out', 'ai-tutor.ai', 'moodle-abc', true, true);
+        $this->assertSame('errorapitimeout', $e->errorcode);
+        $this->assertStringContainsString('moodle-abc', $e->getMessage());
+        $this->assertFalse($e->is_fatal());
     }
 }
