@@ -30,9 +30,6 @@ namespace local_lumination;
  * Reads base_url and api_key from plugin settings. Uses Moodle's curl class
  * to make authenticated requests to the Lumination API.
  *
- * Public API for Lumination add-ons (see README.md, "Building an add-on"): keep
- * public method signatures backwards compatible.
- *
  * @package    local_lumination
  * @copyright  2026 Lumination AI <https://lumination.ai>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -59,18 +56,65 @@ class api_client {
     /** @var string The API key for authentication. */
     private string $apikey;
 
+    /** @var string The configured API base URL (may be empty for the default). */
+    private string $baseurl;
+
+    /** @var bool Whether the key and base URL come from the Lumination AI Provider. */
+    private bool $fromhub = false;
+
     /** @var int Request timeout in seconds. */
     private int $timeout;
 
     /**
      * Constructor.
      *
-     * @param string|null $apikey The API key, or null to read from plugin settings.
+     * With no key given, uses the Lumination AI Provider's key and base URL when that plugin
+     * is installed with an enabled instance, otherwise this plugin's own settings.
+     *
+     * @param string|null $apikey The API key, or null to read it as described above.
      * @param int $timeout Request timeout in seconds.
      */
     public function __construct(?string $apikey = null, int $timeout = 120) {
-        $this->apikey = self::clean_key((string) ($apikey ?? get_config('local_lumination', 'apikey')));
+        $hub = $apikey === null ? self::hub_config() : null;
+        if ($hub) {
+            $this->fromhub = true;
+            $apikey = $hub['apikey'];
+            $this->baseurl = $hub['baseurl'];
+        } else {
+            $apikey = $apikey ?? (string) get_config('local_lumination', 'apikey');
+            $this->baseurl = trim((string) get_config('local_lumination', 'baseurl'));
+        }
+        $this->apikey = self::clean_key($apikey);
         $this->timeout = $timeout;
+    }
+
+    /**
+     * The key and base URL of the site's Lumination AI Provider (aiprovider_lumination), if any.
+     *
+     * @return array|null ['apikey' => string, 'baseurl' => string], or null when the provider is not
+     *                    installed or has no enabled instance with a key.
+     */
+    public static function hub_config(): ?array {
+        if (!class_exists('\aiprovider_lumination\provider')) {
+            return null;
+        }
+        $instance = \aiprovider_lumination\provider::get_site_instance();
+        if (!$instance) {
+            return null;
+        }
+        return [
+            'apikey' => (string) ($instance->config['apikey'] ?? ''),
+            'baseurl' => trim((string) ($instance->config['baseurl'] ?? '')),
+        ];
+    }
+
+    /**
+     * Whether this client uses the Lumination AI Provider's key.
+     *
+     * @return bool True if the key and base URL come from the provider.
+     */
+    public function uses_hub(): bool {
+        return $this->fromhub;
     }
 
     /**
@@ -116,15 +160,14 @@ class api_client {
     }
 
     /**
-     * Resolve the API base URL from settings, falling back to the production default.
+     * The API base URL, falling back to the production default.
      *
      * The base URL includes the /api/v1 prefix; endpoints are short paths like '/tutor'.
      *
      * @return string Base URL with no trailing slash.
      */
     public function base_url(): string {
-        $configured = trim((string) get_config('local_lumination', 'baseurl'));
-        return rtrim($configured !== '' ? $configured : self::DEFAULT_BASE_URL, '/');
+        return rtrim($this->baseurl !== '' ? $this->baseurl : self::DEFAULT_BASE_URL, '/');
     }
 
     /**

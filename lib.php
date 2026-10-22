@@ -31,10 +31,7 @@
  * @return void
  */
 function local_lumination_extend_navigation(global_navigation $navigation) {
-    if (
-        \local_lumination\suite::course_generator_enabled()
-        && has_capability('local/lumination:generatecourse', context_system::instance())
-    ) {
+    if (has_capability('local/lumination:generatecourse', context_system::instance())) {
         $node = $navigation->add(
             get_string('coursegenerator_nav', 'local_lumination'),
             new moodle_url('/local/lumination/course_generator.php'),
@@ -60,7 +57,7 @@ function local_lumination_extend_navigation_category_settings(
     navigation_node $navigation,
     context $context
 ) {
-    if (\local_lumination\suite::course_generator_enabled() && has_capability('local/lumination:generatecourse', $context)) {
+    if (has_capability('local/lumination:generatecourse', $context)) {
         $navigation->add(
             get_string('coursegenerator_nav', 'local_lumination'),
             new moodle_url('/local/lumination/course_generator.php'),

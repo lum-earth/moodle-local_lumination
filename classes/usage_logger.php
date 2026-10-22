@@ -27,9 +27,6 @@ namespace local_lumination;
 /**
  * Logs API usage (tokens, credits) to the local_lumination_usage table.
  *
- * Public API for Lumination add-ons (see README.md, "Building an add-on"). Add-ons log
- * actions as "<component>:<action>".
- *
  * @package    local_lumination
  * @copyright  2026 Lumination AI <https://lumination.ai>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

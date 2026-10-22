@@ -33,6 +33,9 @@ $settingsurl = new moodle_url('/admin/settings.php', ['section' => 'local_lumina
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('testconnection', 'local_lumination'));
 
+if ($api->uses_hub()) {
+    echo html_writer::tag('p', get_string('testconnection_fromhub', 'local_lumination'));
+}
 echo html_writer::tag('p', get_string('testconnection_baseurl', 'local_lumination', s($api->base_url())));
 
 if (!$api->is_configured()) {

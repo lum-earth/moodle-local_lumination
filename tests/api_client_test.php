@@ -114,8 +114,23 @@ final class api_client_test extends \advanced_testcase {
         $this->assertSame('ai-tutor.ai', $client->host());
 
         set_config('baseurl', ' https://example.com/api/v1/ ', 'local_lumination');
+        $client = new api_client('sk-tutor-x');
         $this->assertSame('https://example.com/api/v1', $client->base_url());
         $this->assertSame('example.com', $client->host());
+    }
+
+    /**
+     * Test that without the Lumination AI Provider the plugin's own key is used.
+     */
+    public function test_own_key_without_hub(): void {
+        if (class_exists('\aiprovider_lumination\provider')) {
+            $this->markTestSkipped('The Lumination AI Provider is installed.');
+        }
+        set_config('apikey', 'sk-tutor-own', 'local_lumination');
+        $this->assertNull(api_client::hub_config());
+        $client = new api_client();
+        $this->assertFalse($client->uses_hub());
+        $this->assertTrue($client->is_configured());
     }
 
     /**

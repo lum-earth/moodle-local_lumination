@@ -1,6 +1,6 @@
 # Lumination AI Course Generator for Moodle
 
-Generate a complete Moodle course from a PDF or Word document with AI. This plugin is also the hub of the Lumination AI plugins for Moodle: it holds the API key and the connection that add-ons use.
+Generate a complete Moodle course from a PDF or Word document with AI. Part of the Lumination AI plugins for Moodle.
 
 ## Features
 
@@ -38,22 +38,13 @@ Each generated lesson costs about $0.02, roughly $0.30 for a 20-lesson course. N
 2. Go to **Site administration > Plugins > Install plugins** and upload it.
 3. Add your API key in the plugin settings and click **Test connection**.
 
-The Course Generator appears in the navigation drawer and under the plugin's settings category. Administrators can switch it off in the settings if they only use add-ons.
+The Course Generator appears in the navigation drawer and under the plugin's settings category.
 
-## Building an add-on
+## With the Lumination AI Provider (Moodle 5.0+)
 
-Other Lumination plugins (add-ons) reuse this plugin's API key and connection. An add-on declares the dependency in its `version.php`:
+The Lumination AI Provider (`aiprovider_lumination`) connects Moodle's own AI features to the same AI Tutor account and holds the API key for all Lumination AI plugins. When it is installed with an enabled instance, the Course Generator uses its key and base URL, and its own key fields are ignored. Installing the provider on a site where the Course Generator already has a key creates the provider instance from that key.
 
-```php
-$plugin->dependencies = ['local_lumination' => 2026102201]; // 0.5.0 or later.
-```
-
-These classes are the public API for add-ons. Their public methods keep working across 0.x releases; anything else may change.
-
-- `\local_lumination\api_client`: `new api_client()` uses the site's key and base URL. `post()`, `get()`, `put()` for synchronous calls, `run($path, $data)` to submit an async job and wait for the result, `is_configured()`, `check_connection()`.
-- `\local_lumination\api_exception`: thrown by `api_client` on any failure. `is_fatal()` is true when the key is rejected or out of credits (stop calling the API), `$httpcode` and `$requestid` identify the call. `getMessage()` is ready to show to an administrator.
-- `\local_lumination\usage_logger::log($action, $response, $courseid)`: records tokens and credits from a job envelope. Add-ons pass `$action` as `<component>:<action>` (for example `block_luminationtutor:answer`) and define the label `action_<action>` in their own lang file; the usage dashboard picks it up.
-- `\local_lumination\suite::get_addons()`: installed add-ons, listed on the settings page.
+Source: https://github.com/lum-earth/moodle-aiprovider_lumination
 
 ## License
 

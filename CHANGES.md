@@ -2,10 +2,9 @@
 
 ## v0.5.0 (2026-10-22)
 
-- This plugin is now the hub for Lumination AI add-ons. Add-ons reuse its API key, connection and usage dashboard; the settings page lists the ones installed.
-- New setting to switch off the Course Generator, for sites that only use add-ons. It stays on by default.
-- The usage dashboard shows add-on actions with their own labels.
-- README rewritten with current pricing ($0.02 per lesson, $20 of free credits for new accounts), how to get a key, and how to build an add-on.
+- Works with the new Lumination AI Provider (Moodle 5.0+). When the provider is installed and enabled, the Course Generator uses its API key and base URL, and the settings page says so. Without it, nothing changes.
+- The usage dashboard shows actions logged by other Lumination plugins with their own labels.
+- README rewritten with current pricing ($0.02 per lesson, $20 of free credits for new accounts) and how to get a key.
 
 ## v0.4.0 (2026-10-22)
 
