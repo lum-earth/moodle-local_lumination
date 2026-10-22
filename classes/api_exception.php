@@ -31,6 +31,8 @@ namespace local_lumination;
  * so the message shown to the admin says where the request went and support can
  * find it in the server logs.
  *
+ * Public API for Lumination add-ons (see README.md, "Building an add-on").
+ *
  * @package    local_lumination
  * @copyright  2026 Lumination AI <https://lumination.ai>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

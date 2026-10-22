@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.0 (2026-10-22)
+
+- This plugin is now the hub for Lumination AI add-ons. Add-ons reuse its API key, connection and usage dashboard; the settings page lists the ones installed.
+- New setting to switch off the Course Generator, for sites that only use add-ons. It stays on by default.
+- The usage dashboard shows add-on actions with their own labels.
+- README rewritten with current pricing ($0.02 per lesson, $20 of free credits for new accounts), how to get a key, and how to build an add-on.
+
 ## v0.4.0 (2026-10-22)
 
 - Fixes "HTTP 401: Invalid API key" on sites that first installed v0.3.0. That release saved the staging server as the API base URL, and later upgrades kept it. The upgrade now switches a saved staging URL to production (`https://ai-tutor.ai/api/v1`).

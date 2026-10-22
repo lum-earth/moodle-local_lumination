@@ -131,9 +131,13 @@ foreach ($daily as $row) {
 
 // By-action rows.
 foreach ($byaction as $row) {
-    $actionkey = 'action_' . $row->action;
-    $actionlabel = get_string_manager()->string_exists($actionkey, 'local_lumination')
-        ? get_string($actionkey, 'local_lumination')
+    // Add-ons log actions as "<component>:<action>" and label them in their own lang file.
+    [$component, $action] = strpos($row->action, ':') !== false
+        ? explode(':', $row->action, 2)
+        : ['local_lumination', $row->action];
+    $actionkey = 'action_' . $action;
+    $actionlabel = get_string_manager()->string_exists($actionkey, $component)
+        ? get_string($actionkey, $component)
         : $row->action;
     $templatedata['actionrows'][] = [
         'cells' => [

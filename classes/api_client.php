@@ -30,6 +30,9 @@ namespace local_lumination;
  * Reads base_url and api_key from plugin settings. Uses Moodle's curl class
  * to make authenticated requests to the Lumination API.
  *
+ * Public API for Lumination add-ons (see README.md, "Building an add-on"): keep
+ * public method signatures backwards compatible.
+ *
  * @package    local_lumination
  * @copyright  2026 Lumination AI <https://lumination.ai>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

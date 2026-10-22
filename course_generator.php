@@ -31,6 +31,9 @@ require_once(__DIR__ . '/../../config.php');
 require_login();
 $context = context_system::instance();
 require_capability('local/lumination:generatecourse', $context);
+if (!\local_lumination\suite::course_generator_enabled()) {
+    throw new moodle_exception('coursegeneratordisabled', 'local_lumination');
+}
 
 $PAGE->set_url(new moodle_url('/local/lumination/course_generator.php'));
 $PAGE->set_context($context);

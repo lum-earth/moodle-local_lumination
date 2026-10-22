@@ -71,6 +71,31 @@ if ($hassiteconfig) {
         )
     );
 
+    $settings->add(
+        new admin_setting_configcheckbox(
+            'local_lumination/enablecoursegenerator',
+            get_string('setting_enablecoursegenerator', 'local_lumination'),
+            get_string('setting_enablecoursegenerator_desc', 'local_lumination'),
+            1
+        )
+    );
+
+    // Installed add-ons. Only worked out when the settings page itself is shown.
+    $suitedesc = '';
+    if ($ADMIN->fulltree) {
+        $addons = \local_lumination\suite::get_addons();
+        $suitedesc = $addons
+            ? html_writer::alist(array_map('s', $addons))
+            : get_string('suite_noaddons', 'local_lumination');
+    }
+    $settings->add(
+        new admin_setting_heading(
+            'local_lumination/suite',
+            get_string('suite', 'local_lumination'),
+            $suitedesc
+        )
+    );
+
     $ADMIN->add('local_lumination_cat', $settings);
 
     // Connection check, linked from the settings page.
@@ -91,7 +116,8 @@ if ($hassiteconfig) {
             'local_lumination_coursegen',
             get_string('coursegenerator_nav', 'local_lumination'),
             new moodle_url('/local/lumination/course_generator.php'),
-            'local/lumination:generatecourse'
+            'local/lumination:generatecourse',
+            !\local_lumination\suite::course_generator_enabled()
         )
     );
 

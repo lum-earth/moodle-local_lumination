@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_lumination';
-$plugin->version   = 2026102200;
+$plugin->version   = 2026102201;
 $plugin->requires  = 2024042200; // Moodle 4.4+.
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.4.0';
+$plugin->release   = '0.5.0';
