@@ -79,48 +79,20 @@ if ($data = $form->get_data()) {
     $coursetitle = $data->title;
     $categoryid = $data->categoryid;
 
-    try {
-        // Persist the reviewed outline back to the course guide (best-effort).
-        $generator->save_guide($guideuuid, $editedmodules, $coursetitle);
+    // Persist the reviewed outline back to the course guide (best-effort).
+    $generator->save_guide($guideuuid, $editedmodules, $coursetitle);
 
-        $course = $generator->create_moodle_course_from_outline(
-            $editedmodules,
-            $coursetitle,
-            $categoryid,
-            $objectives,
-            $language
-        );
+    // Lessons are generated in the background; progress.php follows the job.
+    $jobid = \local_lumination\task\generate_course::queue(
+        $editedmodules,
+        $coursetitle,
+        (int) $categoryid,
+        $objectives,
+        $language
+    );
 
-        // Clear session cache.
-        $cache->delete('data');
-
-        // Show success.
-        $successparams = (object) [
-            'sections' => $course->lumination_sections,
-            'activities' => $course->lumination_activities,
-        ];
-        echo $OUTPUT->header();
-        echo $OUTPUT->notification(
-            get_string('coursecreated_desc', 'local_lumination', $successparams),
-            'success'
-        );
-        echo html_writer::link(
-            new moodle_url('/course/view.php', ['id' => $course->id]),
-            get_string('viewcourse', 'local_lumination'),
-            ['class' => 'btn btn-primary mt-3']
-        );
-        echo $OUTPUT->footer();
-        die;
-    } catch (\Exception $e) {
-        echo $OUTPUT->header();
-        echo $OUTPUT->notification(
-            get_string('errorapifailed', 'local_lumination', $e->getMessage()),
-            'error'
-        );
-        $form->display();
-        echo $OUTPUT->footer();
-        die;
-    }
+    $cache->delete('data');
+    redirect(new moodle_url('/local/lumination/progress.php', ['id' => $jobid]));
 }
 
 // Prepare JS strings for the AMD outline editor.

@@ -59,7 +59,30 @@ if ($hassiteconfig) {
         )
     );
 
+    $settings->add(
+        new admin_setting_description(
+            'local_lumination/testconnection',
+            get_string('testconnection', 'local_lumination'),
+            html_writer::link(
+                new moodle_url('/local/lumination/test_connection.php'),
+                get_string('testconnection_link', 'local_lumination'),
+                ['class' => 'btn btn-secondary']
+            )
+        )
+    );
+
     $ADMIN->add('local_lumination_cat', $settings);
+
+    // Connection check, linked from the settings page.
+    $ADMIN->add(
+        'local_lumination_cat',
+        new admin_externalpage(
+            'local_lumination_testconnection',
+            get_string('testconnection', 'local_lumination'),
+            new moodle_url('/local/lumination/test_connection.php'),
+            'moodle/site:config'
+        )
+    );
 
     // Direct link to the Course Generator tool.
     $ADMIN->add(

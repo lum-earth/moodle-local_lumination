@@ -272,6 +272,69 @@ final class course_generator_test extends \advanced_testcase {
         $this->assertCount(1, $pages);
         $page = reset($pages);
         $this->assertStringContainsString('will be added', $page->content);
+        $this->assertSame(1, $course->lumination_failed);
+        $this->assertSame('', $course->lumination_error);
+    }
+
+    /**
+     * Test that a rejected key stops further API calls and is reported.
+     */
+    public function test_create_moodle_course_from_outline_stops_on_rejected_key(): void {
+        global $DB;
+
+        $this->setAdminUser();
+
+        // The API should be called once; every later lesson gets a placeholder without a call.
+        $mockapi = $this->createMock(api_client::class);
+        $mockapi->expects($this->once())->method('run')->willThrowException(
+            new api_exception(401, 'Invalid API key', 'ai-tutor.ai', 'moodle-test')
+        );
+
+        $generator = new course_generator($mockapi);
+        $modules = [
+            [
+                'title' => 'Module',
+                'description' => '',
+                'lessons' => [
+                    ['title' => 'One'],
+                    ['title' => 'Two'],
+                    ['title' => 'Three'],
+                ],
+            ],
+        ];
+
+        $calls = [];
+        $category = $this->getDataGenerator()->create_category();
+        $course = $generator->create_moodle_course_from_outline(
+            $modules,
+            'Rejected Key Course',
+            $category->id,
+            [],
+            'en',
+            function ($course, $done, $failed) use (&$calls) {
+                $calls[] = [$done, $failed];
+            }
+        );
+
+        $this->assertSame(3, $course->lumination_activities);
+        $this->assertSame(3, $course->lumination_failed);
+        $this->assertStringContainsString('moodle-test', $course->lumination_error);
+        $this->assertCount(3, $DB->get_records('page', ['course' => $course->id]));
+
+        // Progress is reported once when the course exists and after each lesson.
+        $this->assertSame([[0, 0], [1, 1], [2, 2], [3, 3]], $calls);
+    }
+
+    /**
+     * Test that count_lessons() totals lessons across modules.
+     */
+    public function test_count_lessons(): void {
+        $this->assertSame(0, course_generator::count_lessons([]));
+        $this->assertSame(3, course_generator::count_lessons([
+            ['lessons' => [['title' => 'a'], ['title' => 'b']]],
+            ['lessons' => [['title' => 'c']]],
+            ['title' => 'no lessons'],
+        ]));
     }
 
     /**

@@ -82,6 +82,17 @@ class provider implements
             'privacy:metadata:usage'
         );
 
+        $collection->add_database_table(
+            'local_lumination_jobs',
+            [
+                'userid' => 'privacy:metadata:jobs:userid',
+                'coursename' => 'privacy:metadata:jobs:coursename',
+                'status' => 'privacy:metadata:jobs:status',
+                'timecreated' => 'privacy:metadata:jobs:timecreated',
+            ],
+            'privacy:metadata:jobs'
+        );
+
         $collection->add_external_location_link(
             'lumination_api',
             [
@@ -120,6 +131,13 @@ class provider implements
                    AND c.instanceid = 0";
         $contextlist->add_from_sql($sql, $params);
 
+        $sql = "SELECT c.id
+                  FROM {context} c
+                  JOIN {local_lumination_jobs} j ON j.userid = :userid
+                 WHERE c.contextlevel = :contextlevel
+                   AND c.instanceid = 0";
+        $contextlist->add_from_sql($sql, $params);
+
         return $contextlist;
     }
 
@@ -138,6 +156,9 @@ class provider implements
         $userlist->add_from_sql('userid', $sql, []);
 
         $sql = "SELECT DISTINCT userid FROM {local_lumination_usage}";
+        $userlist->add_from_sql('userid', $sql, []);
+
+        $sql = "SELECT DISTINCT userid FROM {local_lumination_jobs}";
         $userlist->add_from_sql('userid', $sql, []);
     }
 
@@ -187,6 +208,23 @@ class provider implements
                 (object) ['usage' => $exportdata]
             );
         }
+
+        // Export course generation jobs.
+        $jobs = $DB->get_records('local_lumination_jobs', ['userid' => $userid]);
+        if (!empty($jobs)) {
+            $exportdata = [];
+            foreach ($jobs as $job) {
+                $exportdata[] = (object) [
+                    'coursename' => $job->coursename,
+                    'status' => $job->status,
+                    'timecreated' => \core_privacy\local\request\transform::datetime($job->timecreated),
+                ];
+            }
+            writer::with_context($context)->export_data(
+                [get_string('pluginname', 'local_lumination'), 'jobs'],
+                (object) ['jobs' => $exportdata]
+            );
+        }
     }
 
     /**
@@ -200,6 +238,7 @@ class provider implements
         $userid = $contextlist->get_user()->id;
         $DB->delete_records('local_lumination_documents', ['userid' => $userid]);
         $DB->delete_records('local_lumination_usage', ['userid' => $userid]);
+        $DB->delete_records('local_lumination_jobs', ['userid' => $userid]);
     }
 
     /**
@@ -216,6 +255,7 @@ class provider implements
 
         $DB->delete_records('local_lumination_documents');
         $DB->delete_records('local_lumination_usage');
+        $DB->delete_records('local_lumination_jobs');
     }
 
     /**
@@ -239,5 +279,6 @@ class provider implements
         [$usersql, $userparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
         $DB->delete_records_select('local_lumination_documents', "userid {$usersql}", $userparams);
         $DB->delete_records_select('local_lumination_usage', "userid {$usersql}", $userparams);
+        $DB->delete_records_select('local_lumination_jobs', "userid {$usersql}", $userparams);
     }
 }

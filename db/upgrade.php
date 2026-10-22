@@ -59,5 +59,45 @@ function xmldb_local_lumination_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026021602, 'local', 'lumination');
     }
 
+    if ($oldversion < 2026102200) {
+        // Sites that installed v0.3.0 saved its staging default as the base URL, and later
+        // releases never overwrote it, so production keys were rejected as "Invalid API key".
+        $baseurl = rtrim(trim((string) get_config('local_lumination', 'baseurl')), '/');
+        if ($baseurl === 'https://stage.ai-tutor.ai/api/v1') {
+            set_config('baseurl', \local_lumination\api_client::DEFAULT_BASE_URL, 'local_lumination');
+        }
+
+        // Strip whitespace pasted along with the API key.
+        $apikey = get_config('local_lumination', 'apikey');
+        if (is_string($apikey) && $apikey !== trim($apikey)) {
+            set_config('apikey', trim($apikey), 'local_lumination');
+        }
+
+        // Define table local_lumination_jobs to track background course generation.
+        $table = new xmldb_table('local_lumination_jobs');
+
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('coursename', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('status', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'queued');
+        $table->add_field('lessonstotal', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lessonsdone', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lessonsfailed', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('message', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        $table->add_index('idx_jobs_userid', XMLDB_INDEX_NOTUNIQUE, ['userid']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026102200, 'local', 'lumination');
+    }
+
     return true;
 }

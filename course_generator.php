@@ -106,11 +106,12 @@ if ($data = $form->get_data()) {
 
         redirect(new moodle_url('/local/lumination/review_outline.php'));
     } catch (\Exception $e) {
+        // API errors already carry a full message (host, cause, request ID).
+        $message = $e instanceof \moodle_exception
+            ? $e->getMessage()
+            : get_string('errorapifailed', 'local_lumination', $e->getMessage());
         echo $OUTPUT->header();
-        echo $OUTPUT->notification(
-            get_string('errorapifailed', 'local_lumination', $e->getMessage()),
-            'error'
-        );
+        echo $OUTPUT->notification(s($message), 'error');
         $form->display();
         echo $OUTPUT->footer();
         die;

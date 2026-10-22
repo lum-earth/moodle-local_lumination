@@ -36,13 +36,22 @@ namespace local_lumination;
  */
 class api_client {
     /** @var string Default AI Tutor API base URL (production). Includes the /api/v1 prefix. */
-    private const DEFAULT_BASE_URL = 'https://ai-tutor.ai/api/v1';
+    public const DEFAULT_BASE_URL = 'https://ai-tutor.ai/api/v1';
+
+    /** @var string Prefix of every AI Tutor API key. */
+    public const KEY_PREFIX = 'sk-tutor-';
 
     /** @var int Seconds between polls when waiting for an async job. */
     private const POLL_INTERVAL = 3;
 
     /** @var int Maximum seconds to wait for an async job to complete. */
     private const POLL_MAX_WAIT = 600;
+
+    /** @var int[] Seconds to wait before each retry of a transient failure. */
+    private const RETRY_DELAYS = [2, 5];
+
+    /** @var int Upper bound for a server-provided Retry-After, in seconds. */
+    private const RETRY_AFTER_MAX = 30;
 
     /** @var string The API key for authentication. */
     private string $apikey;
@@ -57,20 +66,31 @@ class api_client {
      * @param int $timeout Request timeout in seconds.
      */
     public function __construct(?string $apikey = null, int $timeout = 120) {
-        $this->apikey = $apikey ?? get_config('local_lumination', 'apikey');
+        // Keys pasted from the dashboard often carry a trailing space or newline,
+        // which the API rejects as "Invalid API key".
+        $this->apikey = trim((string) ($apikey ?? get_config('local_lumination', 'apikey')));
         $this->timeout = $timeout;
     }
 
     /**
-     * Resolve the API base URL from settings, falling back to the staging default.
+     * Resolve the API base URL from settings, falling back to the production default.
      *
      * The base URL includes the /api/v1 prefix; endpoints are short paths like '/tutor'.
      *
      * @return string Base URL with no trailing slash.
      */
-    private function base_url(): string {
-        $configured = get_config('local_lumination', 'baseurl');
-        return rtrim(!empty($configured) ? $configured : self::DEFAULT_BASE_URL, '/');
+    public function base_url(): string {
+        $configured = trim((string) get_config('local_lumination', 'baseurl'));
+        return rtrim($configured !== '' ? $configured : self::DEFAULT_BASE_URL, '/');
+    }
+
+    /**
+     * Host part of the base URL, used in error messages.
+     *
+     * @return string The host name.
+     */
+    public function host(): string {
+        return parse_url($this->base_url(), PHP_URL_HOST) ?: $this->base_url();
     }
 
     /**
@@ -83,21 +103,26 @@ class api_client {
     }
 
     /**
+     * Whether the configured key has the AI Tutor key format (sk-tutor-...).
+     *
+     * Keys from the old Lumination API do not, and are rejected by AI Tutor.
+     *
+     * @return bool True if the key starts with the AI Tutor prefix.
+     */
+    public function has_valid_key_format(): bool {
+        return strpos($this->apikey, self::KEY_PREFIX) === 0;
+    }
+
+    /**
      * Make a POST request with a JSON body.
      *
      * @param string $path API path starting with '/' (e.g. /course/guide).
      * @param array $data Request body data to be JSON-encoded.
      * @return array Decoded JSON response.
-     * @throws \moodle_exception If the request fails or returns an error status.
+     * @throws api_exception If the request fails or returns an error status.
      */
     public function post(string $path, array $data = []): array {
-        $url = $this->base_url() . $path;
-        $curl = new \curl();
-        $this->set_common_options($curl);
-        $curl->setHeader('Content-Type: application/json');
-
-        $response = $curl->post($url, json_encode($data));
-        return $this->handle_response($curl, $response, $url);
+        return $this->handle_response($this->send('POST', $path, $data));
     }
 
     /**
@@ -106,19 +131,10 @@ class api_client {
      * @param string $path API path starting with '/' (e.g. /course/guide/{uuid}).
      * @param array $data Request body data to be JSON-encoded.
      * @return array Decoded JSON response.
-     * @throws \moodle_exception If the request fails or returns an error status.
+     * @throws api_exception If the request fails or returns an error status.
      */
     public function put(string $path, array $data = []): array {
-        $url = $this->base_url() . $path;
-        $curl = new \curl();
-        $this->set_common_options($curl);
-        $curl->setHeader('Content-Type: application/json');
-
-        // Send a real PUT with a JSON body. Passing CURLOPT_CUSTOMREQUEST in the
-        // per-request options ensures it is applied together with the request body
-        // (setting it separately gets overridden by CURLOPT_POST inside post()).
-        $response = $curl->post($url, json_encode($data), ['CURLOPT_CUSTOMREQUEST' => 'PUT']);
-        return $this->handle_response($curl, $response, $url);
+        return $this->handle_response($this->send('PUT', $path, $data));
     }
 
     /**
@@ -127,18 +143,13 @@ class api_client {
      * @param string $path API path starting with '/' (e.g. /requests/{id}).
      * @param array $params Query parameters to append to the URL.
      * @return array Decoded JSON response.
-     * @throws \moodle_exception If the request fails or returns an error status.
+     * @throws api_exception If the request fails or returns an error status.
      */
     public function get(string $path, array $params = []): array {
-        $url = $this->base_url() . $path;
         if (!empty($params)) {
-            $url .= '?' . http_build_query($params);
+            $path .= '?' . http_build_query($params);
         }
-        $curl = new \curl();
-        $this->set_common_options($curl);
-
-        $response = $curl->get($url);
-        return $this->handle_response($curl, $response, $url);
+        return $this->handle_response($this->send('GET', $path));
     }
 
     /**
@@ -152,110 +163,199 @@ class api_client {
      * @param string $path Tool path (e.g. /tutor, /homework, /course).
      * @param array $data Request body.
      * @return array The completed job envelope.
-     * @throws \moodle_exception If submission fails, the job fails, or it times out.
+     * @throws api_exception If submission fails, the job fails, or it times out.
      */
     public function run(string $path, array $data = []): array {
         $submit = $this->post($path, $data);
 
         // Some responses may already be terminal.
         $status = $submit['status'] ?? '';
-        if ($status === 'completed' || $status === 'failed') {
-            if ($status === 'failed') {
-                throw new \moodle_exception('errorapifailed', 'local_lumination', '', $submit['error'] ?? 'Job failed');
-            }
-            return $submit;
-        }
-
         $requestid = $submit['request_id'] ?? '';
-        if (empty($requestid)) {
-            // No async id: return what we got.
+        if ($status === 'failed') {
+            throw new api_exception(0, $submit['error'] ?? 'Job failed', $this->host(), $requestid);
+        }
+        if ($status === 'completed' || empty($requestid)) {
             return $submit;
         }
 
         $deadline = time() + self::POLL_MAX_WAIT;
         while (time() < $deadline) {
-            sleep(self::POLL_INTERVAL);
+            $this->pause(self::POLL_INTERVAL);
             $job = $this->get('/requests/' . rawurlencode($requestid));
             $status = $job['status'] ?? '';
             if ($status === 'completed') {
                 return $job;
             }
             if ($status === 'failed') {
-                throw new \moodle_exception(
-                    'errorapifailed',
-                    'local_lumination',
-                    '',
-                    $job['error'] ?? 'Job failed'
-                );
+                throw new api_exception(0, $job['error'] ?? 'Job failed', $this->host(), $requestid);
             }
         }
 
-        throw new \moodle_exception('errorapifailed', 'local_lumination', '', 'The request timed out.');
+        throw new api_exception(
+            0,
+            'no result after ' . self::POLL_MAX_WAIT . ' seconds',
+            $this->host(),
+            $requestid
+        );
     }
 
     /**
-     * Set common curl options including authentication headers and timeout.
+     * Check that the API is reachable and accepts the configured key, without spending credits.
      *
-     * @param \curl $curl The Moodle curl instance to configure.
-     * @return void
+     * Looks up a request ID that does not exist. The API authenticates every call
+     * first, so a rejected key gets 401 and an accepted key gets a JSON 404.
+     *
+     * @return array ['ok' => bool, 'message' => string] with a message ready to show the admin.
      */
-    private function set_common_options(\curl $curl): void {
+    public function check_connection(): array {
+        $res = $this->send('GET', '/requests/moodle-connection-check');
+        $a = (object) [
+            'host' => $this->host(),
+            'code' => $res['code'],
+            'requestid' => $res['requestid'],
+        ];
+
+        if ($res['errno']) {
+            $a->detail = $res['error'];
+            return ['ok' => false, 'message' => get_string('errorapiconnect', 'local_lumination', $a)];
+        }
+        if (in_array($res['code'], [401, 402, 403], true)) {
+            $e = new api_exception($res['code'], $this->error_detail($res), $a->host, $res['requestid']);
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+        // Any other JSON answer means the key got past authentication.
+        if ($res['json'] !== null && $res['code'] < 500) {
+            return ['ok' => true, 'message' => get_string('testconnection_ok', 'local_lumination', $a)];
+        }
+        $a->detail = $this->error_detail($res);
+        return ['ok' => false, 'message' => get_string('testconnection_notapi', 'local_lumination', $a)];
+    }
+
+    /**
+     * Send one API call, retrying transient failures.
+     *
+     * GET calls are retried on connection errors and HTTP 429/502/503/504. POST and
+     * PUT are retried only on 429 and 503, where the API has not started the work,
+     * so a retry cannot run (and charge) the same job twice.
+     *
+     * @param string $method HTTP method.
+     * @param string $path API path starting with '/'.
+     * @param array|null $data Request body for POST/PUT.
+     * @return array ['code', 'body', 'json', 'requestid', 'errno', 'error'] for the last attempt.
+     */
+    private function send(string $method, string $path, ?array $data = null): array {
+        $retryable = $method === 'GET' ? [0, 429, 502, 503, 504] : [429, 503];
+        $attempt = 0;
+        while (true) {
+            $res = $this->send_once($method, $path, $data);
+            $code = $res['errno'] ? 0 : $res['code'];
+            if (!in_array($code, $retryable, true) || $attempt >= count(self::RETRY_DELAYS)) {
+                return $res;
+            }
+            $delay = self::RETRY_DELAYS[$attempt];
+            if (is_numeric($res['retryafter']) && (int) $res['retryafter'] > 0) {
+                $delay = min((int) $res['retryafter'], self::RETRY_AFTER_MAX);
+            }
+            $this->pause($delay);
+            $attempt++;
+        }
+    }
+
+    /**
+     * Send a single HTTP request to the API.
+     *
+     * @param string $method HTTP method.
+     * @param string $path API path starting with '/'.
+     * @param array|null $data Request body for POST/PUT.
+     * @return array ['code', 'body', 'json', 'requestid', 'errno', 'error', 'retryafter'].
+     */
+    protected function send_once(string $method, string $path, ?array $data = null): array {
+        $url = $this->base_url() . $path;
+        $requestid = 'moodle-' . uniqid();
+
+        $curl = new \curl();
         $curl->setHeader('x-api-key: ' . $this->apikey);
-        $curl->setHeader('X-REQUEST-ID: moodle-' . uniqid());
+        $curl->setHeader('X-REQUEST-ID: ' . $requestid);
         $curl->setopt([
             'CURLOPT_TIMEOUT' => $this->timeout,
             'CURLOPT_CONNECTTIMEOUT' => 10,
         ]);
+
+        if ($method === 'GET') {
+            $body = $curl->get($url);
+        } else {
+            $curl->setHeader('Content-Type: application/json');
+            // Passing CURLOPT_CUSTOMREQUEST in the per-request options ensures it is
+            // applied together with the request body (setting it separately gets
+            // overridden by CURLOPT_POST inside post()).
+            $options = $method === 'POST' ? [] : ['CURLOPT_CUSTOMREQUEST' => $method];
+            $body = $curl->post($url, json_encode($data ?? []), $options);
+        }
+
+        $retryafter = null;
+        foreach ((array) $curl->getResponse() as $name => $value) {
+            if (strcasecmp((string) $name, 'Retry-After') === 0) {
+                $retryafter = is_array($value) ? end($value) : $value;
+            }
+        }
+
+        $body = (string) $body;
+        $json = json_decode($body, true);
+        return [
+            'code' => (int) ($curl->get_info()['http_code'] ?? 0),
+            'body' => $body,
+            'json' => is_array($json) ? $json : null,
+            'requestid' => $requestid,
+            'errno' => (int) $curl->get_errno(),
+            'error' => (string) $curl->error,
+            'retryafter' => $retryafter,
+        ];
     }
 
     /**
-     * Handle the API response: check HTTP status, decode JSON, and validate.
+     * Turn a send() result into decoded JSON, or throw.
      *
-     * @param \curl $curl The curl instance used for the request.
-     * @param string $response Raw response body.
-     * @param string $url The requested URL (used in error messages).
+     * @param array $res Result of send().
      * @return array Decoded JSON response data.
-     * @throws \moodle_exception If the connection failed, HTTP status is not 2xx, or JSON is invalid.
+     * @throws api_exception If the connection failed, HTTP status is not 2xx, or JSON is invalid.
      */
-    private function handle_response(\curl $curl, string $response, string $url): array {
-        $info = $curl->get_info();
-        $httpcode = $info['http_code'] ?? 0;
-
-        if ($curl->get_errno()) {
-            throw new \moodle_exception(
-                'errorapifailed',
-                'local_lumination',
-                '',
-                'Connection error: ' . $curl->error
-            );
+    private function handle_response(array $res): array {
+        if ($res['errno']) {
+            throw new api_exception(0, $res['error'], $this->host(), $res['requestid'], true);
         }
+        if ($res['code'] < 200 || $res['code'] >= 300) {
+            throw new api_exception($res['code'], $this->error_detail($res), $this->host(), $res['requestid']);
+        }
+        if ($res['json'] === null) {
+            throw new api_exception($res['code'], 'Invalid JSON response', $this->host(), $res['requestid']);
+        }
+        return $res['json'];
+    }
 
-        if ($httpcode < 200 || $httpcode >= 300) {
-            $errormsg = "HTTP {$httpcode}";
-            $decoded = json_decode($response, true);
-            if (!empty($decoded['error'])) {
-                $errormsg .= ': ' . $decoded['error'];
-            } else if (!empty($decoded['detail'])) {
-                $errormsg .= ': ' . $decoded['detail'];
+    /**
+     * Pull a readable error detail out of a response.
+     *
+     * @param array $res Result of send().
+     * @return string The API's error or detail field, or the start of the raw body.
+     */
+    private function error_detail(array $res): string {
+        $json = $res['json'] ?? [];
+        foreach (['error', 'detail', 'message'] as $field) {
+            if (!empty($json[$field]) && is_string($json[$field])) {
+                return $json[$field];
             }
-            throw new \moodle_exception(
-                'errorapifailed',
-                'local_lumination',
-                '',
-                $errormsg
-            );
         }
+        $text = trim(strip_tags($res['body']));
+        return $text === '' ? 'no response body' : \core_text::substr($text, 0, 200);
+    }
 
-        $decoded = json_decode($response, true);
-        if ($decoded === null) {
-            throw new \moodle_exception(
-                'errorapifailed',
-                'local_lumination',
-                '',
-                'Invalid JSON response'
-            );
-        }
-
-        return $decoded;
+    /**
+     * Wait between polls and retries. Separate so tests can skip the wait.
+     *
+     * @param int $seconds Seconds to wait.
+     * @return void
+     */
+    protected function pause(int $seconds): void {
+        sleep($seconds);
     }
 }

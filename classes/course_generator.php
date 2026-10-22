@@ -188,25 +188,33 @@ class course_generator {
      * Each module becomes a course section and each lesson becomes a mod_page
      * activity whose HTML content is generated via the AI Tutor /tutor endpoint.
      *
+     * If a lesson fails, it gets placeholder content and the rest continue. If the API
+     * rejects the key or runs out of credits, no further lessons are requested: the
+     * remaining ones get placeholders and the reason is returned in lumination_error.
+     *
      * @param array $modules Edited modules, each ['title', 'description', 'lessons' => [['title']]].
      * @param string $title The full name for the Moodle course.
      * @param int $categoryid Moodle course category ID.
      * @param array $objectives Course learning objectives used to ground lesson content.
      * @param string $language Language code for generated content (e.g. 'en').
-     * @return \stdClass The created Moodle course with lumination_sections and lumination_activities.
+     * @param callable|null $progress Called as $progress($course, $done, $failed) once the
+     *                                course exists and after each lesson.
+     * @return \stdClass The created Moodle course with lumination_sections, lumination_activities,
+     *                   lumination_failed (lessons left as placeholders) and lumination_error.
      */
     public function create_moodle_course_from_outline(
         array $modules,
         string $title,
         int $categoryid,
         array $objectives = [],
-        string $language = 'en'
+        string $language = 'en',
+        ?callable $progress = null
     ): \stdClass {
         global $DB;
 
         // Generating each lesson is a separate API round-trip, so a large course
-        // can take several minutes. Raise the execution time limit accordingly.
-        \core_php_time_limit::raise(600);
+        // can take many minutes. This runs from cron, so lift the time limit.
+        \core_php_time_limit::raise();
 
         // Ensure valid category -- fall back to first available.
         if (empty($categoryid) || !$DB->record_exists('course_categories', ['id' => $categoryid])) {
@@ -227,6 +235,11 @@ class course_generator {
 
         $course = create_course($courseobj);
         $activitycount = 0;
+        $failedcount = 0;
+        $fatalerror = '';
+        if ($progress) {
+            $progress($course, 0, 0);
+        }
 
         foreach ($modules as $i => $module) {
             $sectionnumber = $i + 1;
@@ -254,16 +267,37 @@ class course_generator {
             foreach ($lessons as $lesson) {
                 $lessontitle = $lesson['title'] ?? 'Lesson';
 
-                $lessoncontent = $this->generate_lesson_content(
-                    $lessontitle,
-                    $moduletitle,
-                    $title,
-                    $objectives,
-                    $language
-                );
+                $lessoncontent = null;
+                if ($fatalerror === '') {
+                    try {
+                        $lessoncontent = $this->generate_lesson_content(
+                            $lessontitle,
+                            $moduletitle,
+                            $title,
+                            $objectives,
+                            $language,
+                            (int) $course->id
+                        );
+                    } catch (api_exception $e) {
+                        if ($e->is_fatal()) {
+                            $fatalerror = $e->getMessage();
+                        }
+                    } catch (\Exception $e) {
+                        // Any other failure affects this lesson only; it gets a placeholder below.
+                        unset($e);
+                    }
+                }
+                if ($lessoncontent === null) {
+                    $failedcount++;
+                    $lessoncontent = '<p><em>Content for "' . htmlspecialchars($lessontitle)
+                        . '" will be added. Edit this page to complete.</em></p>';
+                }
 
                 $this->add_page_activity($course, $sectionnumber, $lessontitle, $lessoncontent);
                 $activitycount++;
+                if ($progress) {
+                    $progress($course, $activitycount, $failedcount);
+                }
             }
         }
 
@@ -271,8 +305,24 @@ class course_generator {
 
         $course->lumination_sections = count($modules);
         $course->lumination_activities = $activitycount;
+        $course->lumination_failed = $failedcount;
+        $course->lumination_error = $fatalerror;
 
         return $course;
+    }
+
+    /**
+     * Count the lessons in an outline.
+     *
+     * @param array $modules Modules, each with a 'lessons' array.
+     * @return int Total number of lessons.
+     */
+    public static function count_lessons(array $modules): int {
+        $total = 0;
+        foreach ($modules as $module) {
+            $total += count($module['lessons'] ?? []);
+        }
+        return $total;
     }
 
     /**
@@ -280,22 +330,25 @@ class course_generator {
      *
      * The lesson and module titles come from the document-derived guide, so the
      * generated content stays on-topic. Course learning objectives are included
-     * for extra grounding. Returns placeholder HTML if generation fails.
+     * for extra grounding.
      *
      * @param string $lessontitle The lesson title.
      * @param string $moduletitle The parent module title (for context).
      * @param string $coursetitle The course title (for context).
      * @param array $objectives Course learning objectives (for grounding).
      * @param string $language Language code for the generated content (e.g. 'en').
-     * @return string Generated HTML content, or a placeholder on failure.
+     * @param int|null $courseid Moodle course the lesson belongs to (for usage logging).
+     * @return string|null Generated HTML content, or null if the API returned no content.
+     * @throws \moodle_exception If the API call fails.
      */
     private function generate_lesson_content(
         string $lessontitle,
         string $moduletitle,
         string $coursetitle,
         array $objectives,
-        string $language = 'en'
-    ): string {
+        string $language = 'en',
+        ?int $courseid = null
+    ): ?string {
         $objtext = '';
         if (!empty($objectives)) {
             $objtext = "Course learning objectives:\n- " . implode("\n- ", array_slice($objectives, 0, 8)) . "\n\n";
@@ -316,28 +369,22 @@ class course_generator {
             . "- 300-600 words\n"
             . "Return only the HTML content, with no code fences.";
 
-        try {
-            $job = $this->api->run('/tutor', ['message' => $prompt]);
-            usage_logger::log('generate_lesson', $job);
+        $job = $this->api->run('/tutor', ['message' => $prompt]);
+        usage_logger::log('generate_lesson', $job, $courseid);
 
-            $content = $job['result']['reply'] ?? '';
-            if (!empty($content) && is_string($content)) {
-                // Strip a leading markdown/HTML heading that duplicates the lesson title.
-                $content = preg_replace('/^\s*#{1,4}\s+.*?\n+/', '', $content, 1);
-                $content = preg_replace('/^\s*<h[1-4][^>]*>.*?<\/h[1-4]>\s*/i', '', $content, 1);
-                // Strip surrounding triple-backtick code fences if the model added them.
-                $fence = str_repeat(chr(96), 3);
-                $content = preg_replace('/^\s*' . $fence . '(?:html)?\s*/i', '', $content);
-                $content = preg_replace('/\s*' . $fence . '\s*$/', '', $content);
-                return trim($content);
-            }
-        } catch (\Exception $e) {
-            // Lesson generation failed -- fall through to placeholder content below.
-            unset($e);
+        $content = $job['result']['reply'] ?? '';
+        if (empty($content) || !is_string($content)) {
+            return null;
         }
 
-        return '<p><em>Content for "' . htmlspecialchars($lessontitle)
-            . '" will be added. Edit this page to complete.</em></p>';
+        // Strip a leading markdown/HTML heading that duplicates the lesson title.
+        $content = preg_replace('/^\s*#{1,4}\s+.*?\n+/', '', $content, 1);
+        $content = preg_replace('/^\s*<h[1-4][^>]*>.*?<\/h[1-4]>\s*/i', '', $content, 1);
+        // Strip surrounding triple-backtick code fences if the model added them.
+        $fence = str_repeat(chr(96), 3);
+        $content = preg_replace('/^\s*' . $fence . '(?:html)?\s*/i', '', $content);
+        $content = preg_replace('/\s*' . $fence . '\s*$/', '', $content);
+        return trim($content);
     }
 
     /**
