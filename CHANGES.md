@@ -3,8 +3,8 @@
 ## v0.4.0 (2026-10-22)
 
 - Fixes "HTTP 401: Invalid API key" on sites that first installed v0.3.0. That release saved the staging server as the API base URL, and later upgrades kept it. The upgrade now switches a saved staging URL to production (`https://ai-tutor.ai/api/v1`).
-- Spaces or line breaks pasted around the API key are now ignored (they made the API reject the key).
-- New "Test connection" button on the settings page. It checks the base URL and the key without spending credits, and warns when the key is not an AI Tutor key (`sk-tutor-...`).
+- Spaces, line breaks, invisible characters (non-breaking or zero-width spaces) and quotes pasted with the API key are now removed. They made the API reject the key.
+- New "Test connection" button on the settings page. It checks the base URL and the key without spending credits, and shows the start, end and length of the key Moodle is using so you can compare it with your dashboard. It warns when the key is not an AI Tutor key (`sk-tutor-...`) or looks incomplete, for example when it was copied while shortened in the dashboard.
 - Clearer errors. Each message says which server was called, what to check (key, base URL or credits) and the request ID to quote to support.
 - Courses are now generated in the background (Moodle cron), with a progress page. Large courses no longer hit web server or proxy timeouts, and you can leave the page while lessons are written.
 - If the API rejects the key or the credits run out partway through, generation stops calling the API, and the progress page says why. It also reports how many lessons were left with placeholder text.

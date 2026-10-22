@@ -38,8 +38,11 @@ echo html_writer::tag('p', get_string('testconnection_baseurl', 'local_luminatio
 if (!$api->is_configured()) {
     echo $OUTPUT->notification(get_string('errornoapi', 'local_lumination'), 'error');
 } else {
+    echo html_writer::tag('p', get_string('testconnection_key', 'local_lumination', s($api->key_hint())));
     if (!$api->has_valid_key_format()) {
         echo $OUTPUT->notification(get_string('testconnection_keyformat', 'local_lumination'), 'warning');
+    } else if (!$api->has_complete_key()) {
+        echo $OUTPUT->notification(get_string('testconnection_keyincomplete', 'local_lumination'), 'warning');
     }
     $result = $api->check_connection();
     echo $OUTPUT->notification(s($result['message']), $result['ok'] ? 'success' : 'error');

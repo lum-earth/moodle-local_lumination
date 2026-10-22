@@ -70,6 +70,33 @@ final class api_client_test extends \advanced_testcase {
     }
 
     /**
+     * Test that invisible characters and quotes pasted with a key are removed.
+     */
+    public function test_clean_key_removes_invisible_characters(): void {
+        $key = 'sk-tutor-' . str_repeat('a1', 24);
+        $this->assertSame($key, api_client::clean_key("\u{00A0}" . $key . "\u{200B}\r\n"));
+        $this->assertSame($key, api_client::clean_key("\u{FEFF}\"" . $key . "\""));
+        $this->assertSame($key, api_client::clean_key(" '" . $key . "' "));
+    }
+
+    /**
+     * Test the completeness check and the safe key hint.
+     */
+    public function test_complete_key_and_hint(): void {
+        $key = 'sk-tutor-' . str_repeat('ab12', 12);
+        $client = new api_client($key);
+        $this->assertTrue($client->has_complete_key());
+        $this->assertStringContainsString('sk-tutor-...ab12', $client->key_hint());
+        $this->assertStringContainsString('57', $client->key_hint());
+        $this->assertStringNotContainsString($key, $client->key_hint());
+
+        // Copied while masked in the dashboard.
+        $this->assertFalse((new api_client('sk-tutor-ab12…cd34'))->has_complete_key());
+        // Cut short.
+        $this->assertFalse((new api_client(substr($key, 0, 40)))->has_complete_key());
+    }
+
+    /**
      * Test that keys without the AI Tutor prefix are flagged.
      */
     public function test_has_valid_key_format_rejects_old_keys(): void {

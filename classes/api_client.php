@@ -66,10 +66,50 @@ class api_client {
      * @param int $timeout Request timeout in seconds.
      */
     public function __construct(?string $apikey = null, int $timeout = 120) {
-        // Keys pasted from the dashboard often carry a trailing space or newline,
-        // which the API rejects as "Invalid API key".
-        $this->apikey = trim((string) ($apikey ?? get_config('local_lumination', 'apikey')));
+        $this->apikey = self::clean_key((string) ($apikey ?? get_config('local_lumination', 'apikey')));
         $this->timeout = $timeout;
+    }
+
+    /**
+     * Remove characters that get pasted along with a key and make the API reject it.
+     *
+     * Copying from a web page or an email can add spaces, line breaks, non-breaking
+     * or zero-width spaces and quotes. PHP's trim() misses the Unicode ones, and the
+     * API answers "Invalid API key". Keys never contain any of these characters.
+     *
+     * @param string $key The key as saved in the settings.
+     * @return string The cleaned key.
+     */
+    public static function clean_key(string $key): string {
+        $key = preg_replace('/[\s\x{00A0}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+/u', '', $key) ?? $key;
+        return trim($key, "\"'");
+    }
+
+    /**
+     * A safe description of the key in use, for comparing with the dashboard.
+     *
+     * @return string For example 'sk-tutor-...1a2b (57 characters)'.
+     */
+    public function key_hint(): string {
+        $length = \core_text::strlen($this->apikey);
+        $start = \core_text::substr($this->apikey, 0, \core_text::strlen(self::KEY_PREFIX));
+        $end = $length > 16 ? \core_text::substr($this->apikey, -4) : '';
+        return get_string('keyhint', 'local_lumination', (object) [
+            'start' => $start,
+            'end' => $end,
+            'length' => $length,
+        ]);
+    }
+
+    /**
+     * Whether the key looks complete: the AI Tutor prefix followed by 48 letters and digits.
+     *
+     * A key copied while masked in the dashboard ("..." or bullets) or cut short fails this.
+     *
+     * @return bool True if the key has the expected shape.
+     */
+    public function has_complete_key(): bool {
+        return (bool) preg_match('/^' . preg_quote(self::KEY_PREFIX, '/') . '[A-Za-z0-9]{48}$/', $this->apikey);
     }
 
     /**
@@ -270,6 +310,10 @@ class api_client {
      * @return array ['code', 'body', 'json', 'requestid', 'errno', 'error', 'retryafter'].
      */
     protected function send_once(string $method, string $path, ?array $data = null): array {
+        global $CFG;
+        // The curl class is not autoloaded; cron and the test page do not load it otherwise.
+        require_once($CFG->libdir . '/filelib.php');
+
         $url = $this->base_url() . $path;
         $requestid = 'moodle-' . uniqid();
 

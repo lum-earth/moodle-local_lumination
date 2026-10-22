@@ -67,10 +67,10 @@ function xmldb_local_lumination_upgrade($oldversion) {
             set_config('baseurl', \local_lumination\api_client::DEFAULT_BASE_URL, 'local_lumination');
         }
 
-        // Strip whitespace pasted along with the API key.
+        // Strip spaces, invisible characters and quotes pasted along with the API key.
         $apikey = get_config('local_lumination', 'apikey');
-        if (is_string($apikey) && $apikey !== trim($apikey)) {
-            set_config('apikey', trim($apikey), 'local_lumination');
+        if (is_string($apikey) && $apikey !== \local_lumination\api_client::clean_key($apikey)) {
+            set_config('apikey', \local_lumination\api_client::clean_key($apikey), 'local_lumination');
         }
 
         // Define table local_lumination_jobs to track background course generation.
