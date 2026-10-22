@@ -52,4 +52,4 @@ GNU GPL v3 or later, https://www.gnu.org/copyleft/gpl.html
 
 ## Support
 
-Report bugs at https://github.com/Borjablm/moodle-local_lumination/issues or write to hello@ai-tutor.ai.
+Report bugs at https://github.com/lum-earth/moodle-local_lumination/issues or write to hello@ai-tutor.ai.
