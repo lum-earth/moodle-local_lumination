@@ -119,6 +119,16 @@ final class course_generator_test extends \advanced_testcase {
     }
 
     /**
+     * Test that accented letters become plain letters instead of being dropped.
+     */
+    public function test_generate_unique_shortname_accents(): void {
+        $generator = new course_generator($this->create_mock_api());
+        $shortname = $this->shortnamemethod->invoke($generator, 'Prevención de riesgos');
+
+        $this->assertSame('PREVENCIONDERIE', $shortname);
+    }
+
+    /**
      * Test that duplicate shortnames get an incrementing suffix.
      */
     public function test_generate_unique_shortname_increments_on_duplicate(): void {

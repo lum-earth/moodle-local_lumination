@@ -443,8 +443,9 @@ class course_generator {
     private function generate_unique_shortname(string $title): string {
         global $DB;
 
-        // Create base shortname from title.
-        $base = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $title), 0, 15));
+        // Create base shortname from title; accented letters become plain ones ("Prevención" gives PREVENCION).
+        $ascii = \core_text::specialtoascii($title);
+        $base = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $ascii), 0, 15));
         if (empty($base)) {
             $base = 'LUM';
         }
